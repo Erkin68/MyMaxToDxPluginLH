@@ -1,0 +1,825 @@
+#include "ExpDX.h"
+#include "modstack.h"
+#include "iunwrap.h"
+#include "animtbl.h"
+#include "decomp.h"
+#include "d3dxmath.h"
+#include "d3d.h"
+
+
+
+typedef struct _VertexsForZet
+{
+	double x;
+	double y;
+	double z;
+} VertexsForZet;
+VertexsForZet   *pVertexsForZet;
+int				*pDiagonalEdgelar,
+				*pFacelarTabli,
+				*pTartiblanganPolygonlar,
+				numPolygon;
+
+typedef struct _PolygonTabli
+{
+	int FirstFaceNum;
+	int SecondFaceNum;
+} PolygonTabli;
+PolygonTabli    *pPolygonTabli;
+
+typedef struct _MyPlane
+{
+	float	a;
+	float   b;
+	float   c;
+	float   d;
+} MyPlane;
+MyPlane			p1,p2;
+
+WORD            wNumVerts;
+double			widthX,heightY,FromX,FromY,ToX,ToY,DELTA;
+
+
+inline double getMin(double a, double b)
+{
+   return a>b ? b : a;
+}
+
+inline double getMax(double a, double b)
+{
+   return a>b ? a : b;
+}
+
+
+
+
+BYTE GetPolygonType(int numPol)
+{
+/*
+1-xil polygon:	 ______    2-xil polygon: ______
+				|\     |				|\     |
+				| \  2 |				| \  1 |
+				|  \   |				|  \   |
+				| 1 \  |				| 2 \  |
+				|    \ |				|    \ |
+				|_____\|				|_____\|
+
+3-xil polygon:	 ______    4-xil polygon: ______        
+				|     /|				|     /|
+				| 1  / |				| 2  / |
+				|   /  |				|   /  |
+				|  /   |				|  /   |
+				| /  2 |				| /  1 |
+				|/_____|				|/_____|
+*/
+double	MidPointPolXf1, MidPointPolYf1,MidPointPolXf2, MidPointPolYf2;  
+WORD	indF1_V0,indF1_V1,indF1_V2,indF2_V0,indF2_V1,indF2_V2; 
+int     polyType;
+
+	polyType = 0x00;
+
+	indF1_V0 = (WORD)mesh->faces[pPolygonTabli[numPol].FirstFaceNum] .v[0];
+	indF1_V1 = (WORD)mesh->faces[pPolygonTabli[numPol].FirstFaceNum] .v[1];
+	indF1_V2 = (WORD)mesh->faces[pPolygonTabli[numPol].FirstFaceNum] .v[2];
+	indF2_V0 = (WORD)mesh->faces[pPolygonTabli[numPol].SecondFaceNum].v[0];
+	indF2_V1 = (WORD)mesh->faces[pPolygonTabli[numPol].SecondFaceNum].v[1];
+	indF2_V2 = (WORD)mesh->faces[pPolygonTabli[numPol].SecondFaceNum].v[2];
+
+	MidPointPolXf1 = (	pVertexsForZet[indF1_V0].x + 
+						pVertexsForZet[indF1_V1].x + 
+						pVertexsForZet[indF1_V2].x) / 3;
+	MidPointPolYf1 = (	pVertexsForZet[indF1_V0].y + 
+						pVertexsForZet[indF1_V1].y + 
+						pVertexsForZet[indF1_V2].y) / 3; 
+	MidPointPolXf2 = (	pVertexsForZet[indF2_V0].x + 
+						pVertexsForZet[indF2_V1].x + 
+						pVertexsForZet[indF2_V2].x) / 3;
+	MidPointPolYf2 = (	pVertexsForZet[indF2_V0].y + 
+						pVertexsForZet[indF2_V1].y + 
+						pVertexsForZet[indF2_V2].y) / 3; 
+
+	if( (MidPointPolXf1 < MidPointPolXf2) &&  (MidPointPolYf1 < MidPointPolYf2) )
+		polyType = 0x01;
+	else
+		if( (MidPointPolXf1 < MidPointPolXf2) &&  (MidPointPolYf1 > MidPointPolYf2) )
+			polyType = 0x03;
+		else
+			if( (MidPointPolXf1 > MidPointPolXf2) &&  (MidPointPolYf1 > MidPointPolYf2) )
+				polyType = 0x02;
+			else
+				if( (MidPointPolXf1 > MidPointPolXf2) &&  (MidPointPolYf1 < MidPointPolYf2) )
+					polyType = 0x04;
+
+	return polyType;
+}
+
+
+
+
+
+
+/***************************************************************************************/
+VOID ExportOneZet(Interface *ip,IUtil *iu,int sel_num)
+{
+Point3			v,v1,v2,v3,v4,v5,v6;	
+int				i;
+char			s[256];
+D3DXVECTOR3		V1,V2,V3,V4,V5,V6;
+D3DXPLANE		pOut1,pOut2; 
+
+
+
+	DELTA = 0.001f;
+
+	node = ip->GetSelNode(sel_num);//node ni olamiz
+	nodeName = node->GetName();//node ni nomini olamiz
+//***************************************************************************
+    Matrix3 tm = node->GetObjTMAfterWSM(ip->GetTime());
+	//Matrix3 trM,rotM,scM,tmObj;
+
+	ObjectState os = node->EvalWorldState(ip->GetTime());
+	if (!os.obj || os.obj->SuperClassID()!=GEOMOBJECT_CLASS_ID) 
+	{ 
+		MessageBox(NULL,"Katta ildizni ololmayman!","Diqqat",MB_OK);
+		return; // Safety net. This shouldn't happen.
+	}
+//*******  Mesh qilib ko'ramiz **********************************************
+	TriObject* tri = GetTriObjectFromNode(node, ip->GetTime(), needDel);
+	if (!tri) 
+	{
+		MessageBox(NULL,"Obyektni editmesh qilolmayman!","Diqqat",MB_OK);
+		return;
+	}
+	mesh = &tri->GetMesh();
+//************************** Parametrlari ************************************
+	wNumVerts = (DWORD)(mesh->getNumVerts());
+	numFaces = (DWORD)(mesh->getNumFaces());
+	if( (!wNumVerts) || (!numFaces) )
+	{
+		MessageBox(NULL,"faci =0 ; vertsi = 0","Diqqat",MB_OK);
+		return;
+	}
+//*********************  Fileni ochamiz **************************************
+
+	wsprintf(s,"%s%s",nodeName," malumotlarni yig'ish");
+
+//******* avval vertex kordinatalarini massivga to'ldirib chiqamiz ***********
+	
+	pVertexsForZet   = new VertexsForZet [wNumVerts];
+	pDiagonalEdgelar = new int [numFaces];
+
+// birdaniga double FromX,FromY,ToX,ToY larniyam topamiz(MAX-MIN larda)
+
+	FromX = FromY =  1.7E+308;
+	ToX   = ToY   = -1.7E+308;
+	
+	for (i=0; i<wNumVerts; i++) 
+	{
+		v = tm   * mesh->verts[i] ;// meshni o'zi
+		pVertexsForZet[i].x = v.x;
+		pVertexsForZet[i].y = v.y;
+		pVertexsForZet[i].z = v.z;
+		if(FromX > v.x)
+			FromX = v.x;
+		if(FromY > v.y)
+			FromY = v.y;
+		if(ToX < v.x)
+			ToX = v.x;
+		if(ToY < v.y)
+			ToY = v.y;
+		Progr(0,15,(float)i/(float)wNumVerts," ") 
+	}
+
+	DELTA = fabs(ToX - FromX) / 1000000.f;
+//***** width i va heighti ni tekshirib chiqamiz ***************************** 
+
+	widthX = heightY = 0.f; 
+	double  dxInd0_Ind1,dyInd0_Ind1,
+		    dxInd1_Ind2,dyInd1_Ind2,
+		    dxInd2_Ind0,dyInd2_Ind0;// diagonal edgini topish uchun************
+
+	for (i=0; i<numFaces; i++) 
+	{
+		Progr(15,30,(float)i/(float)numFaces," ") 
+
+		ind0 = (WORD)mesh->faces[i].v[0];
+		ind1 = (WORD)mesh->faces[i].v[1];
+		ind2 = (WORD)mesh->faces[i].v[2];
+
+		// avval ind0-ind1 edgini tekshiramiz *********************
+		double dx = fabs(pVertexsForZet[ind0].x - pVertexsForZet[ind1].x);
+		if(  dx > DELTA)
+		{
+			if(widthX == 0.f)
+				widthX = dx;
+			else
+			{
+				if( fabs(dx - widthX) > DELTA )
+				{
+					wsprintf(s,"%d%s%d%s",ind0," chi va ",ind1," chi vertex orasini qarang");
+					MessageBox(NULL,s,"X bo'yicha 1 xillik buzilgan",MB_OK);
+					goto EndingZet;
+				}
+			}
+		}
+		double dy = fabs(pVertexsForZet[ind0].y - pVertexsForZet[ind1].y);
+		if(  dy > DELTA)
+		{
+			if(heightY == 0.f)
+				heightY = dy;
+			else
+			{
+				if( fabs(dy - heightY) > DELTA )
+				{
+					wsprintf(s,"%d%s%d%s",ind0," chi va ",ind1," chi vertex orasini qarang");
+					MessageBox(NULL,s,"Y bo'yicha 1 xillik buzilgan",MB_OK);
+					goto EndingZet;
+				}
+			}
+		}
+
+		dxInd0_Ind1 = dx ; dyInd0_Ind1 = dy;// diagonal edgini topish uchun
+
+		// keyin ind1-ind2 edgini tekshiramiz *********************
+		dx = fabs(pVertexsForZet[ind1].x - pVertexsForZet[ind2].x);
+		if(  dx > DELTA)
+		{
+			if(widthX == 0.f)
+				widthX = dx;
+			else
+			{
+				if( fabs(dx - widthX) > DELTA )
+				{
+					wsprintf(s,"%d%s%d%s",ind1," chi va ",ind2," chi vertex orasini qarang");
+					MessageBox(NULL,s,"X bo'yicha 1 xillik buzilgan",MB_OK);
+					goto EndingZet;
+				}
+			}
+		}
+		dy = fabs(pVertexsForZet[ind1].y - pVertexsForZet[ind2].y);
+		if(  dy > DELTA)
+		{
+			if(heightY == 0.f)
+				heightY = dy;
+			else
+			{
+				if( fabs(dy - heightY) > DELTA )
+				{
+					wsprintf(s,"%d%s%d%s",ind1," chi va ",ind2," chi vertex orasini qarang");
+					MessageBox(NULL,s,"Y bo'yicha 1 xillik buzilgan",MB_OK);
+					goto EndingZet;
+				}
+			}
+		}
+
+		dxInd1_Ind2 = dx ; dyInd1_Ind2 = dy;// diagonal edgini topish uchun
+
+		// keyin ind2-ind0 edgini tekshiramiz *********************
+		dx = fabs(pVertexsForZet[ind2].x - pVertexsForZet[ind0].x);
+		if(  dx > DELTA)
+		{
+			if(widthX == 0.f)
+				widthX = dx;
+			else
+			{
+				if( fabs(dx - widthX) > DELTA )
+				{
+					wsprintf(s,"%d%s%d%s",ind2," chi va ",ind0," chi vertex orasini qarang");
+					MessageBox(NULL,s,"X bo'yicha 1 xillik buzilgan",MB_OK);
+					goto EndingZet;
+				}
+			}
+		}
+		dy = fabs(pVertexsForZet[ind2].y - pVertexsForZet[ind0].y);
+		if(  dy > DELTA)
+		{
+			if(heightY == 0.f)
+				heightY = dy;
+			else
+			{
+				if( fabs(dy - heightY) > DELTA )
+				{
+					wsprintf(s,"%d%s%d%s",ind2," chi va ",ind0," chi vertex orasini qarang");
+					MessageBox(NULL,s,"Y bo'yicha 1 xillik buzilgan",MB_OK);
+					goto EndingZet;
+				}
+			}
+		}		
+
+		dxInd2_Ind0 = dx ; dyInd2_Ind0 = dy;// diagonal edgini topish uchun
+
+		//************ endi diagonal edgiga to'g'ri kelgan vertex (index)larini topamiz ***
+		if( (dxInd0_Ind1 > DELTA) && (dyInd0_Ind1 > DELTA) )
+		{
+			if( (dxInd1_Ind2 > DELTA) && (dyInd1_Ind2 > DELTA) )
+			{
+				wsprintf(s,"%d%s",i," chi facida diagonal edgi");
+				MessageBox(NULL,s," 1 dan ko'p chiqyapti",MB_OK);
+				goto EndingZet;
+			}
+			if( (dxInd2_Ind0 > DELTA) && (dyInd2_Ind0 > DELTA) )
+			{
+				wsprintf(s,"%d%s",i," chi facida diagonal edgi");
+				MessageBox(NULL,s," 1 dan ko'p chiqyapti",MB_OK);
+				goto EndingZet;
+			}
+			pDiagonalEdgelar[i] = 0;
+		}
+		else
+		{
+			if( (dxInd1_Ind2 > DELTA) && (dyInd1_Ind2 > DELTA) )
+			{
+				if( (dxInd0_Ind1 > DELTA) && (dyInd0_Ind1 > DELTA) )
+				{
+					wsprintf(s,"%d%s",i," chi facida diagonal edgi");
+					MessageBox(NULL,s," 1 dan ko'p chiqyapti",MB_OK);
+					goto EndingZet;
+				}
+				if( (dxInd2_Ind0 > DELTA) && (dyInd2_Ind0 > DELTA) )
+				{
+					wsprintf(s,"%d%s",i," chi facida diagonal edgi");
+					MessageBox(NULL,s," 1 dan ko'p chiqyapti",MB_OK);
+					goto EndingZet;
+				}
+				pDiagonalEdgelar[i] = 1;
+			}
+			else
+			{
+				if( (dxInd2_Ind0 > DELTA) && (dyInd2_Ind0 > DELTA) )
+				{
+					if( (dxInd0_Ind1 > DELTA) && (dyInd0_Ind1 > DELTA) )
+					{
+						wsprintf(s,"%d%s",i," chi facida diagonal edgi");
+						MessageBox(NULL,s," 1 dan ko'p chiqyapti",MB_OK);
+						goto EndingZet;
+					}
+					if( (dxInd1_Ind2 > DELTA) && (dyInd1_Ind2 > DELTA) )
+					{
+						wsprintf(s,"%d%s",i," chi facida diagonal edgi");
+						MessageBox(NULL,s," 1 dan ko'p chiqyapti",MB_OK);
+						goto EndingZet;
+					}
+					pDiagonalEdgelar[i] = 2;
+				}
+				else
+				{
+					MessageBox(NULL,"Diqqat","Diagonal edgini topa olmayapman",MB_OK);
+					goto EndingZet;
+				}
+			}
+		}
+	}
+//******* Polygonlar majmuasini tuzamiz *******************
+	pFacelarTabli = new int [numFaces];
+
+	for (i=0; i<numFaces; i++) 
+		pFacelarTabli[i] = 1;
+
+	pPolygonTabli = new PolygonTabli [numFaces];// MAX vozmojniyni qo'yamiz;
+
+	i = numPolygon = 0;
+	while(1)
+	{
+		Progr(30,45,(float)i/(float)numFaces," ") 
+
+		if(i >= numFaces-1)
+			break;//hamma facelarni izlab chiqsa;
+
+		pFacelarTabli[i] = 0;
+		pPolygonTabli[numPolygon].FirstFaceNum  = i;
+
+		//2-faceini topamiz
+
+		pPolygonTabli[numPolygon].SecondFaceNum = -1;
+
+		if(pDiagonalEdgelar[i] == 0)
+		{
+			ind0 = (WORD)mesh->faces[i].v[0];
+			ind1 = (WORD)mesh->faces[i].v[1];
+		} else
+		if(pDiagonalEdgelar[i] == 1)
+		{
+			ind0 = (WORD)mesh->faces[i].v[1];
+			ind1 = (WORD)mesh->faces[i].v[2];
+		} else
+		if(pDiagonalEdgelar[i] == 2)
+		{
+			ind0 = (WORD)mesh->faces[i].v[2];
+			ind1 = (WORD)mesh->faces[i].v[0];
+		}
+		else
+		{
+			MessageBox(NULL,"Diqqat","Diagonal edgi noqaniq",MB_OK);
+			goto EndingZet;
+		}
+
+		for(int k=i+1; k<numFaces; k++)
+		{
+			Progr(45,60,(float)i/(float)numFaces," ") 
+			if(pFacelarTabli[k])
+			{
+				if( (ind0 == (WORD)mesh->faces[k].v[0]) && (ind1 == (WORD)mesh->faces[k].v[1]) )
+				{
+					if(pPolygonTabli[numPolygon].SecondFaceNum == -1)
+					{
+						pPolygonTabli[numPolygon].SecondFaceNum = k; pFacelarTabli[k] = 0;
+					}
+					else
+					{
+						MessageBox(NULL,"Diqqat","2-face 1tadan ziyod chiqyapti",MB_OK);
+						goto EndingZet;
+					}
+				}
+				if( (ind1 == (WORD)mesh->faces[k].v[0]) && (ind0 == (WORD)mesh->faces[k].v[1]) )
+				{
+					if(pPolygonTabli[numPolygon].SecondFaceNum == -1)
+					{
+						pPolygonTabli[numPolygon].SecondFaceNum = k; pFacelarTabli[k] = 0;
+					}
+					else
+					{
+						MessageBox(NULL,"Diqqat","2-face 1tadan ziyod chiqyapti",MB_OK);
+						goto EndingZet;
+					}
+				}
+				//**************
+				if( (ind0 == (WORD)mesh->faces[k].v[1]) && (ind1 == (WORD)mesh->faces[k].v[2]) )
+				{
+					if(pPolygonTabli[numPolygon].SecondFaceNum == -1)
+					{
+						pPolygonTabli[numPolygon].SecondFaceNum = k; pFacelarTabli[k] = 0;
+					}
+					else
+					{
+						MessageBox(NULL,"Diqqat","2-face 1tadan ziyod chiqyapti",MB_OK);
+						goto EndingZet;
+					}
+				}
+				if( (ind1 == (WORD)mesh->faces[k].v[1]) && (ind0 == (WORD)mesh->faces[k].v[2]) )
+				{
+					if(pPolygonTabli[numPolygon].SecondFaceNum == -1)
+					{
+						pPolygonTabli[numPolygon].SecondFaceNum = k; pFacelarTabli[k] = 0;
+					}
+					else
+					{
+						MessageBox(NULL,"Diqqat","2-face 1tadan ziyod chiqyapti",MB_OK);
+						goto EndingZet;
+					}
+				}
+				//**************
+				if( (ind0 == (WORD)mesh->faces[k].v[2]) && (ind1 == (WORD)mesh->faces[k].v[0]) )
+				{
+					if(pPolygonTabli[numPolygon].SecondFaceNum == -1)
+					{
+						pPolygonTabli[numPolygon].SecondFaceNum = k; pFacelarTabli[k] = 0;
+					}
+					else
+					{
+						MessageBox(NULL,"Diqqat","2-face 1tadan ziyod chiqyapti",MB_OK);
+						goto EndingZet;
+					}
+				}
+				if( (ind1 == (WORD)mesh->faces[k].v[2]) && (ind0 == (WORD)mesh->faces[k].v[0]) )
+				{
+					if(pPolygonTabli[numPolygon].SecondFaceNum == -1)
+					{
+						pPolygonTabli[numPolygon].SecondFaceNum = k; pFacelarTabli[k] = 0;
+					}
+					else
+					{
+						MessageBox(NULL,"Diqqat","2-face 1tadan ziyod chiqyapti",MB_OK);
+						goto EndingZet;
+					}
+				}
+			}
+		}
+		if(pPolygonTabli[numPolygon].SecondFaceNum == -1)
+		{
+			MessageBox(NULL,"Diqqat","2-face topilmadi",MB_OK);
+			goto EndingZet;
+		}
+		if(i < numFaces)
+			while(pFacelarTabli[i+1] == 0)
+				i++; 
+		if(i < numFaces-1)
+			i++;
+		if(i < numFaces)
+			numPolygon ++;
+	}
+//****** fayllarga yozish proseduralari *******************
+	openfile(".zmp",streamBin ,"wb")
+	if(bText)
+		openfile(".zetT",streamT ,"w")
+/*
+	if(bText)
+		fprintf(streamT, "%d%s\n",numPolygon," ta polygon bo'lib, ular quyidagi facelardan iborat:");
+	
+	for(i=0; i<numPolygon; i++)
+	if(bText)
+		fprintf(streamT, "%d\t%d\n",pPolygonTabli[i].FirstFaceNum,pPolygonTabli[i].SecondFaceNum);
+*/
+
+//****** endi polygonlarni kordinatasi o'sib borishi tartibida indexlaymiz
+	int TartPolCounter;	
+	double xP, yP, MidPointPolX, MidPointPolY;  
+
+	pTartiblanganPolygonlar = new int [numPolygon];
+
+	TartPolCounter = 0;
+
+	WORD indF1_V0,indF1_V1,indF1_V2,indF2_V0,indF2_V1,indF2_V2;
+
+	for(yP = FromY; yP < ToY-DELTA; yP += heightY)
+	for(xP = FromX; xP < ToX-DELTA; xP += widthX)
+	{
+		for(i=0; i<numPolygon; i++)
+		{
+			Progr(60,75,(float)i/(float)numPolygon," ") 
+			indF1_V0 = (WORD)mesh->faces[pPolygonTabli[i].FirstFaceNum] .v[0];
+			indF1_V1 = (WORD)mesh->faces[pPolygonTabli[i].FirstFaceNum] .v[1];
+			indF1_V2 = (WORD)mesh->faces[pPolygonTabli[i].FirstFaceNum] .v[2];
+			indF2_V0 = (WORD)mesh->faces[pPolygonTabli[i].SecondFaceNum].v[0];
+			indF2_V1 = (WORD)mesh->faces[pPolygonTabli[i].SecondFaceNum].v[1];
+			indF2_V2 = (WORD)mesh->faces[pPolygonTabli[i].SecondFaceNum].v[2];
+			MidPointPolX = (pVertexsForZet[indF1_V0].x + 
+							pVertexsForZet[indF1_V1].x + 
+							pVertexsForZet[indF1_V2].x + 
+							pVertexsForZet[indF2_V0].x + 
+							pVertexsForZet[indF2_V1].x + 
+							pVertexsForZet[indF2_V2].x ) / 6; 
+			MidPointPolY = (pVertexsForZet[indF1_V0].y + 
+							pVertexsForZet[indF1_V1].y + 
+							pVertexsForZet[indF1_V2].y + 
+							pVertexsForZet[indF2_V0].y + 
+							pVertexsForZet[indF2_V1].y + 
+							pVertexsForZet[indF2_V2].y ) / 6;
+
+			if( (MidPointPolX > xP) && (MidPointPolX < xP+widthX) &&
+				(MidPointPolY > yP) && (MidPointPolY < yP+heightY) )
+				break;
+		}
+		pTartiblanganPolygonlar[TartPolCounter++] = i;	
+	}
+
+/*
+	if(bText)
+		fprintf(streamT, "%d%s\n",numPolygon," ta polygon bo'lib, ular quyidagi facelardan iborat:");
+	
+	for(i=0; i<numPolygon; i++)
+	if(bText)
+		fprintf(streamT, "%d\t%d\n",
+			pPolygonTabli[pTartiblanganPolygonlar[i]].FirstFaceNum,
+			pPolygonTabli[pTartiblanganPolygonlar[i]].SecondFaceNum);
+*/
+//******* endi har 1 polyg. ning face i qanaqa tartibda joylashganligini aniqlaymiz ****
+	BYTE PolygonType,FistPolygonType;
+	PolygonType = FistPolygonType = 0;
+
+	// avval 1- polygonnikini aniqlab olamiz, qolgani shunga teng bo'lishi kerak.
+	FistPolygonType = GetPolygonType(0);
+	if(!FistPolygonType) 
+	{
+		MessageBox(NULL,"Diqqat","1-polygonning tipini aniqlay olmadim.",MB_OK);
+		goto EndingZet;
+	}
+
+	// endi qolgan polygonlarning tipi ham 1-nikiday bo'lishi kerak;
+	for(i=0;i<numPolygon;i++)
+	{
+		Progr(75,90,(float)i/(float)numPolygon," ") 
+		PolygonType = GetPolygonType(i);
+		if(PolygonType != FistPolygonType)
+		{
+			MessageBox(NULL,"Diqqat","polygonning tipi 1-polygonnikidan farq qilayapti.",MB_OK);
+			goto EndingZet;
+		}
+	}
+
+//*** faylga yozishni boshlasak ham bo'laveradi *********************************
+/*
+00 BYTE   type		01
+01 float  FromX		04
+05 float  FromY		04
+09 float  WIDTH		04   ToX - FromX
+0D float  HEIGHT	04   ToY - FromY
+11 float  stepX		04   widthX
+15 float  stepY		04   heightY
+19 WORD   countX    02
+1B WORD   countY    02
+1D datas  ............
+*/
+	float	WIDTH,HEIGHT,fwidthX,fheightY,fFromX,fFromY; 
+	WORD	countX,countY;
+
+	WIDTH = ToX - FromX; HEIGHT = ToY - FromY;
+	fwidthX=(float)widthX; fheightY=(float)heightY; fFromX=(float)FromX; fFromY=(float)FromY;
+
+	countX = (WORD)(ceil(WIDTH  / widthX ));
+	countY = (WORD)(ceil(HEIGHT / heightY));
+
+	fwrite( &PolygonType, sizeof( PolygonType )	, 1, streamBin    );
+
+	float	mfFromX,mfFromY,mWIDTH,mHEIGHT,mfwidthX,mfheightY;
+
+	mfFromX		= fMassh * fFromX	;
+	mfFromY		= fMassh * fFromY	;
+	mWIDTH		= fMassh * WIDTH		;
+	mHEIGHT		= fMassh * HEIGHT	;	
+	mfwidthX	= fMassh * fwidthX	;
+	mfheightY	= fMassh * fheightY	;
+
+
+
+	fwrite( &mfFromX	, sizeof( mfFromX )		, 1, streamBin    );
+	fwrite( &mfFromY	, sizeof( mfFromY )		, 1, streamBin    );
+	fwrite( &mWIDTH		, sizeof( mWIDTH )		, 1, streamBin    );
+	fwrite( &mHEIGHT	, sizeof( mHEIGHT )		, 1, streamBin    );
+	fwrite( &mfwidthX	, sizeof( mfwidthX )	, 1, streamBin    );
+	fwrite( &mfheightY	, sizeof( mfheightY )	, 1, streamBin    );
+	fwrite( &mcountX	, sizeof( mcountX )		, 1, streamBin    );
+	fwrite( &mcountY	, sizeof( mcountY )		, 1, streamBin    );
+
+	if(bText)
+	{
+		fprintf(streamT, "%d%s\n",numPolygon," ta polygon bo'lib:");
+		fprintf(streamT, "%s%d\n","Ularning tipi - ",PolygonType);
+		fprintf(streamT, "%f%s\t",FromX," dan (x b-cha) boshlab, ");
+		fprintf(streamT, "%f%s\n",FromY," dan (y b-cha) boshlab, ");
+		fprintf(streamT, "%f%s\t",WIDTH," kengligi, ");
+		fprintf(streamT, "%f%s\n",HEIGHT," balandligi, ");
+		fprintf(streamT, "%f%s\t",widthX," qadami kengligi, ");
+		fprintf(streamT, "%f%s\n",heightY," qadami balandligi, ");
+		fprintf(streamT, "%s%d\t","x bo'yicha soni - ",countX);
+		fprintf(streamT, "%s%d\n","y bo'yicha soni - ",countY);
+	}
+//****** tekisliklarni hisoblaymiz ******************************************
+
+	for(i=0;i<numPolygon;i++)
+	{
+		Progr(90,100,(float)i/(float)numPolygon," ") 
+
+		indF1_V0 = (WORD)mesh->faces[pPolygonTabli[pTartiblanganPolygonlar[i]].FirstFaceNum] .v[0];
+		indF1_V1 = (WORD)mesh->faces[pPolygonTabli[pTartiblanganPolygonlar[i]].FirstFaceNum] .v[1];
+		indF1_V2 = (WORD)mesh->faces[pPolygonTabli[pTartiblanganPolygonlar[i]].FirstFaceNum] .v[2];
+		indF2_V0 = (WORD)mesh->faces[pPolygonTabli[pTartiblanganPolygonlar[i]].SecondFaceNum].v[0];
+		indF2_V1 = (WORD)mesh->faces[pPolygonTabli[pTartiblanganPolygonlar[i]].SecondFaceNum].v[1];
+		indF2_V2 = (WORD)mesh->faces[pPolygonTabli[pTartiblanganPolygonlar[i]].SecondFaceNum].v[2];
+
+		v1 = tm * mesh->verts[indF1_V0];
+		v2 = tm * mesh->verts[indF1_V1];
+		v3 = tm * mesh->verts[indF1_V2];
+		v4 = tm * mesh->verts[indF2_V0];
+		v5 = tm * mesh->verts[indF2_V1];
+		v6 = tm * mesh->verts[indF2_V2];
+
+		V1.x = fMassh*v1.x; V1.y = fMassh*v1.y; V1.z = fMassh*v1.z;
+		V2.x = fMassh*v2.x; V2.y = fMassh*v2.y; V2.z = fMassh*v2.z;
+		V3.x = fMassh*v3.x; V3.y = fMassh*v3.y; V3.z = fMassh*v3.z;
+		V4.x = fMassh*v4.x; V4.y = fMassh*v4.y; V4.z = fMassh*v4.z;
+		V5.x = fMassh*v5.x; V5.y = fMassh*v5.y; V5.z = fMassh*v5.z;
+		V6.x = fMassh*v6.x; V6.y = fMassh*v6.y; V6.z = fMassh*v6.z;
+
+		D3DXPlaneFromPoints(&pOut1 , &V1 , &V2 , &V3); 
+		D3DXPlaneFromPoints(&pOut2 , &V4 , &V5 , &V6); 
+		//*************** Tekislikni sobsvtvenno formulasi **********************			
+		p1.a = pOut1.a; p1.b = pOut1.b; p1.c = pOut1.c; p1.d = pOut1.d;
+		p2.a = pOut2.a; p2.b = pOut2.b; p2.c = pOut2.c; p2.d = pOut2.d;
+		if(p1.c)
+		{
+			p1.a = p1.a / p1.c;    p1.b = p1.b / p1.c;	p1.d = p1.d / p1.c;
+		}
+		if(p2.c)
+		{
+			p2.a = p2.a / p2.c;    p2.b = p2.b / p2.c;	p2.d = p2.d / p2.c;
+		}
+		fwrite( &p1.a, sizeof( p1.a )	, 1, streamBin    );
+		fwrite( &p1.b, sizeof( p1.b )	, 1, streamBin    );
+		fwrite( &p1.d, sizeof( p1.d )	, 1, streamBin    );
+		fwrite( &p2.a, sizeof( p2.a )	, 1, streamBin    );
+		fwrite( &p2.b, sizeof( p2.b )	, 1, streamBin    );
+		fwrite( &p2.d, sizeof( p2.d )	, 1, streamBin    );
+		if(bText)
+		{
+			fprintf(streamT, "%f\t",p1.a);
+			fprintf(streamT, "%f\t",p1.b);
+			fprintf(streamT, "%f\t",p1.d);
+			fprintf(streamT, "%f\t",p2.a);
+			fprintf(streamT, "%f\t",p2.b);
+			fprintf(streamT, "%f\n",p2.d);
+		}
+	}
+
+
+
+//********************  TAMOM  ****************************
+EndingZet:
+
+	fclose(streamBin); 
+	if(bText)
+		fclose(streamT); 
+
+	if(pVertexsForZet)
+	{
+		delete [] pVertexsForZet; 
+		pVertexsForZet = NULL;
+	}
+	if(pDiagonalEdgelar)
+	{
+		delete [] pDiagonalEdgelar;
+		pDiagonalEdgelar = NULL;
+	}
+	if(pPolygonTabli)
+	{
+		delete [] pPolygonTabli;
+		pPolygonTabli = NULL;
+	}
+	if(pFacelarTabli)
+	{
+		delete [] pFacelarTabli;
+		pFacelarTabli = NULL;
+	}
+	if(pTartiblanganPolygonlar)
+	{
+		delete [] pTartiblanganPolygonlar;
+		pTartiblanganPolygonlar = NULL;
+	}
+
+}
+
+
+
+
+
+
+
+
+//VOID OneZet(Interface *ip,IUtil *iu)
+/*VOID OneZet(LPVOID par)
+{
+int		i;
+ThrPar		*thrPar;
+Interface	*ip;
+IUtil		*iu;
+int			type;
+
+	thrPar  = (ThrPar*)par;
+	ip		= thrPar->ip;
+	iu		= thrPar->iu;
+	type	= thrPar->type;
+
+	
+	i = GetSelID(ip);
+
+	if(i > 0)// select qilingani ko'p bo'lsa 
+	{
+		MessageBox(NULL,"1nechasini exp (belgilang)-- ni belgilamasdan","1 nechtasini belgilabsiz!",MB_OK);
+		return;
+	}
+	if( (i < 0) || (i > 65000) ) // select qilingani umuman bo'lmasa
+	{
+		MessageBox(NULL,"Hech qanaqa obyekt topolmadim!","Diqqat",MB_OK);
+		return;
+	}
+
+
+	ExportOneZet(ip,iu,0);
+
+}*/
+
+
+//VOID AllZet(Interface *ip,IUtil *iu)
+VOID AllZet(LPVOID par)
+{
+int		k,i;
+ThrPar		*thrPar;
+Interface	*ip;
+IUtil		*iu;
+int			type;
+
+	thrPar  = (ThrPar*)par;
+	ip		= thrPar->ip;
+	iu		= thrPar->iu;
+	type	= thrPar->type;
+
+	
+	i = GetSelID(ip);
+
+	if(i < 0) // select qilingani umuman bo'lmasa
+	{
+		MessageBox(NULL,"Hech qanaqa obyekt topolmadim!","Diqqat",MB_OK);
+		return;
+	}
+
+	if( (i < 0) || (i > 65000) ) // select qilingani umuman bo'lmasa
+	{
+		MessageBox(NULL,"1nechasini exp (belgilang)-- ni belgilamang","1 nechtasini belgilabsiz!",MB_OK);
+		return;
+	}
+
+	for(k=0;k<=i;k++)
+	{
+		ExportOneZet(ip,iu,k);
+	}
+
+}

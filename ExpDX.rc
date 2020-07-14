@@ -1,0 +1,213 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// Russian resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_RUS)
+#ifdef _WIN32
+LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
+#pragma code_page(1251)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG_HELP DIALOGEX 450, 280, 228, 170
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Export plagini"
+FONT 8, "MS Sans Serif", 0, 0, 0x0
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,177,158,50,14
+    CONTROL         111,IDB_IMAGE_HELP,"Static",SS_BITMAP,7,7,213,148
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDB_BITMAP_HELP         BITMAP                  "PlahAb.bmp"
+#endif    // Russian resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG_COMDLG32 DIALOG  0, 0, 300, 36
+STYLE DS_SETFONT | DS_3DLOOK | DS_CONTROL | WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "Yo'li:",-1,28,4,20,8
+    EDITTEXT        IDC_EDIT_PATH,54,2,218,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "OK",IDC_BTN_OK_BOSHLA,245,16,26,16
+END
+
+IDD_DIALOG_PANEL DIALOGEX 0, 0, 107, 443
+STYLE DS_SETFONT | WS_CHILD | WS_VISIBLE
+FONT 8, "MS Sans Serif", 0, 0, 0x0
+BEGIN
+    LTEXT           "Export utility to the left handed DirectX platform for game. Erkin Sattorov, 12.02.06, Karaulbazar.",IDC_STATIC,0,0,107,24
+    EDITTEXT        IDC_EDIT_TOLIQ_SAHNANI_EXPORT_YOLI,0,253,107,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Path: \\|/",IDC_BTN_ALL_EXPORT_PATH,2,239,32,12
+    GROUPBOX        "Export",IDC_STATIC,0,28,107,204,WS_GROUP,WS_EX_CLIENTEDGE
+    CONTROL         "To text",IDC_CHECK_TEXT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,2,89,35,8
+    PUSHBUTTON      "About",IDC_BTN_ABOUT,39,351,26,9
+    PUSHBUTTON      "Mesh",IDC_BTN_IMPORT_MESH,2,328,25,11
+    EDITTEXT        IDC_EDIT_MASH,53,160,42,12,ES_AUTOHSCROLL
+    LTEXT           "Scale:",IDC_STATIC,13,162,20,8
+    PUSHBUTTON      "Skin",IDC_BTN_IMPORT_SKIN,87,328,17,11
+    GROUPBOX        "Import",IDC_STATIC,0,318,107,25,WS_GROUP,WS_EX_CLIENTEDGE
+    PUSHBUTTON      "Diffuse",IDC_BTN_IMPORT_DIFFUSE_MESH,62,328,25,11
+    EDITTEXT        IDC_EDIT_ANIM_TIME,53,279,52,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "Get sel.info",IDC_BTN_GET_SELECTED_INFO,66,351,39,9
+    LTEXT           "Anim. time, ms.",IDC_STATIC,3,281,47,8
+    PUSHBUTTON      "Mesh",IDC_BTN_EXP_MESH,2,37,26,10
+    PUSHBUTTON      "Diffuse",IDC_BTN_EXP_DIFFUSE,2,47,26,10
+    PUSHBUTTON      "Skin",IDC_BTN_EXP_SKIN,2,56,26,10
+    PUSHBUTTON      "Shape",IDC_BTN_EXP_SHAPE,28,37,28,10
+    PUSHBUTTON      "tu-tv",IDC_BTN_EXP_TU_TV,28,47,28,10
+    PUSHBUTTON      "Morph",IDC_BTN_EXP_MORPH,28,56,28,10
+    PUSHBUTTON      "TM cntrlr.",IDC_BTN_EXP_ANIM,57,37,47,10
+    PUSHBUTTON      "Bipe anim-n",IDC_BTN_EXP_BIPE_ANIM,57,47,47,10
+    PUSHBUTTON      "Morph anim-n",IDC_BTN_EXP_MORPH_ANIM,57,56,47,10
+    GROUPBOX        "Other",IDC_STATIC,0,343,107,19,WS_GROUP,WS_EX_CLIENTEDGE
+    CONTROL         "",IDC_SPIN_SCALE,"SpinnerControl",0x0,96,161,7,11
+    PUSHBUTTON      "Sk2Mrp",IDC_BTN_EXP_SKIN2_MORPH,28,65,28,11
+    CONTROL         "In indexed seq.",IDC_CHECK_INDEXED_SEQUENCE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,44,89,61,8
+    PUSHBUTTON      "SknBnInitTMs",IDC_BTN_INIT_SKIN2_BONE_TMS,57,66,47,10
+    CONTROL         "Tangent and binormal",IDC_CHECK_TANGENT_AND_BINORMAL,
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,2,109,81,8
+    PUSHBUTTON      "TngntMsh",IDC_BTN_IMPORT_TNGNT_MESH,27,328,35,11
+    CONTROL         "Detach skinmeshes",IDC_CHECK_DETACH_MESH,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,2,119,81,8
+    EDITTEXT        IDC_EDIT_THRESHOLD,53,174,42,12,ES_AUTOHSCROLL
+    LTEXT           "Wld. thrshd:",IDC_STATIC,6,176,41,8
+    CONTROL         "",IDC_SPIN_THRESHOLD,"SpinnerControl",0x0,96,175,7,11
+    CONTROL         "32 bit ind",IDC_CHECK_32_BIT,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,2,99,42,8
+    EDITTEXT        IDC_EDIT_INTERPOLATION_KOEF,53,295,51,12,ES_AUTOHSCROLL
+    LTEXT           "An intrp.coef.",IDC_STATIC,3,296,45,8
+    GROUPBOX        "TM controller",IDC_STATIC,0,271,107,41,WS_GROUP,WS_EX_CLIENTEDGE
+    CONTROL         "Delete source",IDC_CHECK_DELETE_OLD,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,44,99,60,8
+    CONTROL         "No normals",IDC_CHECK_NO_NORMALS,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,2,128,47,8
+    CONTROL         "No tu-tv's",IDC_CHECK_NOTUTV,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,54,130,47,8
+    CONTROL         "Flip normals",IDC_CHECK_FLIP_NORMALS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,2,138,47,8
+    CONTROL         "Clamptv 0-1",IDC_CHECK_CLAMPTV,"Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,54,139,47,8
+    LTEXT           "Vertex sel-n,file:",IDC_STATIC,1,370,53,8
+    PUSHBUTTON      "Browse",IDC_BUTTON_SELECTION_FILE,80,369,27,9
+    EDITTEXT        IDC_EDIT_SELECTION_FILE,0,385,107,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "Save sel.to channel:",IDC_BUTTON_SAVE_SELECTION_CHANNEL_TO_FILE,0,400,72,12
+    EDITTEXT        IDC_EDIT_SAVE_SEL_CHANNEL,71,401,34,12,ES_AUTOHSCROLL | ES_READONLY
+    CONTROL         "Use sel-tion fr. file to geometry",IDC_CHECK_SAVE_SELECTION,
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,0,417,107,11
+    CONTROL         "FlipX",IDC_CHECK_FLIPX_EXP_SEL_VERTS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,0,430,27,10
+    CONTROL         "FlipY",IDC_CHECK_FLIPY_EXP_SEL_VERTS,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,29,430,27,10
+    PUSHBUTTON      "ExpSel-dVerts",IDC_BUTTON_EXP_FR_SEL_IND_FILE,59,428,48,14
+    PUSHBUTTON      "PhysX mesh",IDC_BTN_EXP_PHYSX_MESH,27,75,77,11
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_DIALOG_PANEL, DIALOG
+    BEGIN
+        TOPMARGIN, 7
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// String Table
+//
+
+STRINGTABLE 
+BEGIN
+    IDS_LIBDESCRIPTION      "Utility for exporting to the DirectX"
+    IDS_CATEGORY            "MyUtility"
+    IDS_CLASS_NAME          "DirectXga chiq. pl-ni, Erkin S."
+    IDS_PARAMS              "DirectX ga export qilish"
+END
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

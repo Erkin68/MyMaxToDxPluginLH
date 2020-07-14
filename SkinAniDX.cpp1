@@ -1,0 +1,458 @@
+#include "ExpDX.h"
+#include "modstack.h"
+#include "iunwrap.h"
+#include "animtbl.h"
+#include "decomp.h"
+#include "iskin.h"
+#ifdef VISUAL_STUDIO_2005
+#include "c:\Program Files (x86)\Autodesk\3ds Max 2008 SDK\maxsdk\samples\controllers\reactor\reactapi.h"
+#else
+#include "c:\3dsmax5\maxsdk\samples\controllers\reactor\reactapi.h"
+#endif
+
+
+
+VOID ExportOneBpQuats(Interface *ip, BOOL bPivot);
+BOOL			bFootSteps ;
+extern Matrix3	tmBp, trM, rotM;
+
+
+int GetBipParentBoneNum(INode* node)
+{
+int		i;
+	for(i = 0; i < numBones; i++)
+	{	boneName = pBonNodes[i]->GetName();//node ni nomini olamiz
+		if(node == pBonNodes[i])
+			return i;
+	}
+	return -1;
+}
+
+
+VOID RecGetNumBone(INode *chb)
+{
+ 	int nch = chb->NumberOfChildren();
+	for(int j = 0; j < nch; j ++)
+	{
+		boneName = chb->GetChildNode(j)->GetName();
+		if(strstr(boneName,"Nub"))
+			continue;
+		if(strstr(boneName,"Footsteps"))
+		{
+			bFootSteps       = TRUE;
+			continue;
+		}
+		numBones ++;
+		RecGetNumBone(chb->GetChildNode(j));
+	}
+	return ;
+}
+
+VOID RecZapGetNumBone(INode *chb)
+{
+	int nch = chb->NumberOfChildren();
+	for(int j = 0; j < nch; j ++)
+	{	boneName = chb->GetChildNode(j)->GetName();
+		if(strstr(boneName,"Nub"))	continue;
+		if(strstr(boneName,"Footsteps"))
+		{	bFootSteps       = TRUE;
+			continue;
+		}
+		pBonNodes[numBones++] = chb->GetChildNode(j);
+		RecZapGetNumBone(chb->GetChildNode(j));
+	}
+	return ;
+}
+
+
+
+VOID ExportOneSkinAni(Interface *ip,IUtil *iu,int sel_num,BOOL bPivot)
+{
+
+	pBonNodes = 0;pBonesParentTable =0; 
+
+	node = ip->GetSelNode(sel_num);//node ni olamiz
+
+	nodeName = node->GetName();
+
+	if(bText)
+	if(!openfile(sMyData.szExport, nodeName, ".sknT", &streamT,"w"))
+		return;
+
+
+    Control *c = node->GetTMController();
+	//Bundan so'ng faqat biped emas, balki bonelar ham qatnashsun:
+    //if( !((c->ClassID() == BIPSLAVE_CONTROL_CLASS_ID) ||
+	//	(c->ClassID() == BIPBODY_CONTROL_CLASS_ID) ) )
+    //{	MessageBox(NULL,"Bipedni topolmadim.","Kechirasiz, chiqib ketaman!!!",MB_OK);
+	//	return;
+	//}
+
+	numBones = 1;
+	bFootSteps = FALSE;
+	RecGetNumBone(node);
+
+	if(numBones == 1)
+    {	MessageBox(NULL,"Bipening asosi yoq.","Kechirasiz, chiqib ketaman!!!",MB_OK);
+		return;
+	}
+
+	pBonNodes         = new INode *  [numBones];
+	pBonesParentTable = new int      [numBones];
+	pBonesIyerarxTable= new int      [numBones];
+	pBoneNames        = new LPCTSTR  [numBones];
+	pBoneParentNames  = new LPCTSTR  [numBones];
+	//Footstepini hali chiqarganimcha yo'q
+
+	pBonNodes[0] = node;
+
+
+	numBones = 1;
+	bFootSteps = FALSE;
+	RecZapGetNumBone(node);
+
+
+
+	//Alfavit bo'yicha to'g'rilash,Skinnikiga to'g'ri kelmagani uchun
+	int   *nAlphaBet = new int [numBones];
+	INode **alpNodes = new INode * [numBones];
+	int engKich  = 100;
+	int engKatta = -100;
+	for(i = 0; i < numBones; i ++)
+	{	LPCTSTR lpStr1,lpStr2;
+		nAlphaBet [i] = 0;
+		lpStr1 = pBonNodes[i]->GetName();
+		for(int ii = 0; ii < numBones; ii ++)
+		{	if(i != ii)
+			{	lpStr2 = pBonNodes [ii] ->GetName();
+				int res = lstrcmp(lpStr1, lpStr2);
+				if(res > 0)
+					nAlphaBet [i] ++;
+				if(res < 0)
+					nAlphaBet [i] --;
+		}	}
+		if(engKich > nAlphaBet [i])
+			engKich = nAlphaBet [i];
+		if(engKatta < nAlphaBet [i])
+			engKatta = nAlphaBet [i];
+	}
+	
+	int count = 0;
+	while(count < numBones)
+	{	for(i = 0; i < numBones; i ++)
+		{	if(engKich == nAlphaBet [i])
+				alpNodes [count ++] = pBonNodes [i];
+		}
+		engKich ++;
+	}
+	for(i = 0; i < numBones; i++)
+		pBonNodes[i] = alpNodes[i];
+	delete [] nAlphaBet;
+	delete [] alpNodes;
+
+
+
+	
+	for(i = 0; i < numBones; i++)
+	{	INode* parNode        = pBonNodes[i]->GetParentNode();
+		pBonesParentTable[i ] = GetBipParentBoneNum(parNode);
+	}
+//********** iyerarxiyasi bo'yicha tartib bilan qo'yib chiqishim kerak;
+	int *pBonesParentCounts = new int [numBones];
+	int stepCount = 0;
+	for(i = 0; i < numBones; i++)
+	{	pBonesParentCounts[i] =	GetParentCounts(pBonNodes[i]);
+		if(pBonesParentCounts[i] > stepCount) stepCount = pBonesParentCounts[i];
+	}
+
+	if(bText)
+	{	fprintf(streamT,"%d\n",numBones);
+		for(i=0; i<numBones; i++)
+		{	nodeName = pBonNodes[i]->GetName();
+			fprintf(streamT,"%d\t%s\t",i,nodeName);
+			if(!i) nodeName = "NULL";
+			else nodeName = pBonNodes[pBonesParentTable[i]]->GetName();
+			fprintf(streamT,"%s\t%s\t%s\t%d\n","Parenti",nodeName,"Par Soni",pBonesParentCounts[i]);
+	}	}
+
+	int countIyer = 0;
+
+	for(int k = 0; k <= stepCount; k++)
+	{	for(i = 0; i < numBones; i++)
+		{	if(pBonesParentCounts[i] == k)
+				pBonesIyerarxTable[countIyer++] = i;
+	}	}
+
+	if(bText)
+	{	fprintf(streamT,"\n\n%s\n","Iyerarxiya bo\'yicha");
+		for(i=0; i<numBones; i++)
+		{	nodeName = pBonNodes[pBonesIyerarxTable[i]]->GetName();
+			fprintf(streamT,"%d\t%s\n",i,nodeName);
+	}	}
+
+	//tmBp = pBonNodes[pBonesIyerarxTable[0]]->GetNodeTM(0);
+	int s = ip->GetAnimRange().Start();
+	tmBp = pBonNodes[pBonesIyerarxTable[0]]->GetNodeTM(s);
+
+	if(bPivot)
+	{	trM.IdentityMatrix(); rotM.IdentityMatrix();
+		decomp_affine(tmBp,&ap);
+		pos = ap.t;
+		pos.x = -pos.x; pos.y = -pos.y; pos.z = -pos.z; 
+		trM.SetTrans(pos);
+		tmBp.NoTrans();
+		tmBp.NoScale();
+		decomp_affine( tmBp, &ap);
+		q = ap.q;
+		q.Inverse();
+		QuatToEuler(q, eul, EULERTYPE_XYZ);
+		eul[0] = -eul[0]; eul[1] = -eul[1]; eul[2] = -eul[2]; 
+		float tempAng[3]; tempAng[0] = eul[2]; tempAng[1] = eul[1];  tempAng[2] = eul[0];
+		EulerToMatrix(tempAng, rotM, EULERTYPE_ZYX);
+		eul[0] = -eul[0]; eul[1] = -eul[1]; eul[2] = -eul[2]; 
+	}
+
+	delete [] pBonesParentCounts;
+
+	if(bText)
+		fclose(streamT);
+
+	if(bPivot)
+		ExportOneBpQuats(ip,bPivot);
+
+	if(pBonNodes) delete [] pBonNodes;
+	if(pBonesParentTable) delete [] pBonesParentTable;
+	if(pBonesIyerarxTable) delete [] pBonesIyerarxTable;
+	if(keyArrays) delete [] keyArrays;
+	if(pBoneNames) delete [] pBoneNames;
+	if(pBoneParentNames) delete [] pBoneParentNames;
+	return;
+}
+
+
+
+
+int GetBpKeysArray(Interface *ip)
+{
+int t,KeyNum;
+
+	int s = ip->GetAnimRange().Start(); 
+	int e = ip->GetAnimRange().End();
+
+	t = e - s + 1;
+
+	keyArrays = new BOOL [t];
+	for(int k = 0; k < t; k++) keyArrays[k] = FALSE;
+
+	
+	INode   *Bipe01node = pBonNodes[pBonesIyerarxTable[0]];
+	Control *B01c;
+   	if(Bipe01node)
+		B01c = Bipe01node->GetTMController();
+
+
+	for(int b = 0; b < numBones; b++)
+	{	Control *c = pBonNodes[pBonesIyerarxTable[b]]->GetTMController();
+		if(!c)
+		{	fclose(streamBin); 
+			if(bText)
+				fclose(streamT); 
+			return -1;
+		}
+
+		int keys = 0;
+		KeyNum = 0;
+		TimeValue i;
+		for (int f = s; f <= e; f++) 
+		{	//i = f*tpf;
+			i = f;//bunga olib tashlaymiz stepini
+			if(Bipe01node) 
+			{	//shu yerga ozgina dopolneniye, boshi va oxirini qo'shamiz:
+				if( B01c->IsKeyAtTime(i,KEYAT_ROTATION) ||
+				    B01c->IsKeyAtTime(i,KEYAT_POSITION) ||
+					(f == s) || (f == e) )
+				keyArrays[keys] = TRUE;
+			}
+			if( c->IsKeyAtTime(i,KEYAT_ROTATION) ||
+			    c->IsKeyAtTime(i,KEYAT_POSITION) ||
+				(f == s) || (f == e) )
+				keyArrays[keys] = TRUE;
+			if(keyArrays[keys])
+				KeyNum ++;
+			keys++;
+	}	}
+	KeyNum = 0;
+#ifdef VISUAL_STUDIO_2005
+	for(int k = 0; k < t; k++)
+#else
+	for(k = 0; k < t; k++)
+#endif
+	{	if(keyArrays[k])
+			KeyNum++;
+	}
+	return KeyNum;//bu proc arrayni new qilib yaratdi,delete qilishni unutma;
+}
+
+
+
+
+
+
+
+
+
+VOID ExportOneBpQuats(Interface *ip,BOOL bPivot)
+{
+WORD			iNumAnimKeys; 
+Point3			pos;
+TSTR			indent;
+Matrix3			tmCurr;	
+float			PerCent; 
+int				s,e;
+Quat			qCurr;
+
+
+	nodeName = pBonNodes[pBonesIyerarxTable[0]]->GetName();
+
+	iNumAnimKeys = GetBpKeysArray(ip);
+	if(iNumAnimKeys < 1)
+	{	MessageBox(NULL,"Anim keylar yo'q!","Ey",MB_OK);
+		return ;
+	}
+//***************************************************************************
+	if(!openfile(sMyData.szExport, nodeName, _bpa_, &streamBin  ,"wb"))
+		return;
+	if(bText)
+	if(!openfile(sMyData.szExport, nodeName, ".bpaT", &streamT,"w"))
+		return;
+
+	s = ip->GetAnimRange().Start(); 
+	e = ip->GetAnimRange().End();
+
+
+	//Quyidagilar hozircha kerak emas,
+	//chunki anim baqtini hozircha o'zimiz qo'yamiza:
+	//millisekundlarda:
+
+	if(0.0f == sMyData.dete)//Aks holda dete editdan olib hisoblangan:
+	{	int tpf = GetTicksPerFrame();
+		sMyData.dete = 40.0f * (float)(e-s) / tpf;//25 frame / sec. dan
+	}
+
+	fwrite( &sMyData.dete, sizeof( sMyData.dete ), 1, streamBin );
+	if(bText)
+		fprintf( streamT, "%.2f%s\n", sMyData.dete, " sekund.");
+
+
+
+
+	WORD nb ; nb = (WORD)numBones;
+	fwrite( &nb, sizeof( nb ), 1, streamBin );
+	fwrite( &iNumAnimKeys, sizeof( iNumAnimKeys ), 1, streamBin );
+
+	if(bText)
+		fprintf( streamT, "%d\t%d\n", nb,iNumAnimKeys);
+
+for(int b = 0; b < numBones; b++)
+{
+	boneName = pBonNodes[pBonesIyerarxTable[b]]->GetName();//node ni nomini olamiz
+	
+	if(bText)
+		fprintf( streamT, "\n\n%s", boneName);	
+//******* Birinchi NumAnimKeys(pos , rot , scal) ni topamiz *****************
+	//s = ip->GetAnimRange().Start(); 
+	//e = ip->GetAnimRange().End();
+
+	for (int ff = s; ff <= e; ff++) 
+	{	if(keyArrays[ff-s])//2_07_05 da to'g'rilandi
+		{	tmCurr = pBonNodes[pBonesIyerarxTable[b]]->GetNodeTM(ff);			
+			if(bPivot) 
+			{	tmCurr *= rotM;
+				tmCurr *= trM ;
+			}
+
+			decomp_affine(tmCurr, &ap);
+			pos  = ap.t;
+			tmCurr.NoTrans();
+			tmCurr.NoScale();
+			qCurr = Quat(tmCurr);
+
+			// yozamiz
+    		PerCent = (float)(ff-s) / (e-s);
+
+			if( (iNumAnimKeys == 0) && (PerCent != 0.f) )
+				MessageBox(NULL,"Boshi surilgan, to'g'rilang, iltimos !!!","Diqqat",MB_OK);
+
+			float mposx,mposy,mposz;
+			mposx = pos.x * sMyData.fMassh;
+			mposy = pos.y * sMyData.fMassh;
+			mposz = pos.z * sMyData.fMassh;
+
+			fwrite( &PerCent, sizeof( PerCent), 1, streamBin );
+			fwrite( &mposx  , sizeof( mposx  ), 1, streamBin );
+			fwrite( &mposz  , sizeof( mposz  ), 1, streamBin );
+			fwrite( &mposy  , sizeof( mposy  ), 1, streamBin );
+
+			FlipYZAxisInQuat(qCurr);
+
+			fwrite( &qCurr.x, sizeof( qCurr.x ), 1, streamBin );
+			fwrite( &qCurr.y, sizeof( qCurr.z ), 1, streamBin );
+			fwrite( &qCurr.z, sizeof( qCurr.y ), 1, streamBin );
+			fwrite( &qCurr.w, sizeof( qCurr.w ), 1, streamBin );
+			if(bText)
+			{	fprintf( streamT, "\n%f\t\n\t%f\t%f\t%f\t\n\t\t%f\t%f\t%f\t%f\t", PerCent,
+									mposx, mposz, mposy,
+									qCurr.x,qCurr.y,qCurr.z,qCurr.w);  
+				//Eulerini ham chiqaraylik
+				Quat qInv = qCurr;
+				//qInv.Inverse();
+				float Eul[3];
+				QuatToEuler(qInv,Eul, EULERTYPE_XZY);
+				Eul[0] *= 57.29577951f;
+				Eul[1] *= 57.29577951f;
+				Eul[2] *= 57.29577951f;
+				fprintf( streamT, "\n\t\t\t%f\t%f\t%f\t", Eul[0],Eul[2],Eul[1]);  
+			}
+			Progr(0,100,(float)b/(float)numBones,"skin") 
+	}	}	}
+fclose(streamBin); 
+if(bText)
+	fclose(streamT); 
+}
+
+VOID AllSkinAni(LPVOID par)
+{
+int		k,i;
+ThrPar		*thrPar;
+Interface	*ip;
+IUtil		*iu;
+int			type;
+
+	thrPar  = (ThrPar*)par;
+	ip		= thrPar->ip;
+	iu		= thrPar->iu;
+	type	= thrPar->type;
+
+	
+	i = GetSelID(ip);
+
+	if(i < 0) // select qilingani umuman bo'lmasa
+	{	MessageBox(NULL,"Hech qanaqa obyekt topolmadim!","Diqqat",MB_OK);
+		return;
+	}
+
+	if( (i < 0) || (i > 65000) ) // select qilingani umuman bo'lmasa
+	{	MessageBox(NULL,"1nechtasini olib tashlang!","Diqqat",MB_OK);
+		return;
+	}
+
+
+	for(k=0;k<=i;k++)
+	{	__try
+		{
+			ExportOneSkinAni(ip,iu,k,1);
+		}
+		__except(1,1)
+		{
+			MessageBox(NULL, "Kutilmagan gen. xato", "Diqqat!!!", MB_OK);
+}	}	}

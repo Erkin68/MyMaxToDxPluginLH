@@ -1,0 +1,1062 @@
+#include "ExpDX.h"
+#include "simpobj.h"
+
+
+HWND		 carsDlg  = 0;
+Interface	 *ipForCars = 0;
+IUtil		 *iuForCars = 0;
+int			 allNodes = 0;
+extern INode *node;
+extern TCHAR *nodeName; 
+
+
+typedef struct BOX
+{
+	float length;
+	float width ;
+	float height; 
+	Point3 pos ;
+	Point3 rot  ;
+	Matrix3 m   ;
+	VOID write(FILE*);
+	VOID scaleTo   ();
+	VOID flipYZAxis();
+	VOID decompose ();
+} Box;
+
+VOID OpenCar(char*);
+VOID SetBoxs();
+
+VOID BOX::write(FILE*f)
+{
+MRow* rows;
+float nil = 0.0f;
+	fwrite(&width      , 1 , 4 , f);
+	fwrite(&length     , 1 , 4 , f);
+	fwrite(&height     , 1 , 4 , f);
+	fwrite(&pos.x	   , 1 , 4 , f);
+	fwrite(&pos.y	   , 1 , 4 , f);
+	fwrite(&pos.z	   , 1 , 4 , f);
+	fwrite(&rot.x	   , 1 , 4 , f);
+	fwrite(&rot.y	   , 1 , 4 , f);
+	fwrite(&rot.z	   , 1 , 4 , f);
+	rows = m.GetAddr() ;
+	fwrite(&rows[0][0] , 1 , 4 , f);
+	fwrite(&rows[0][1] , 1 , 4 , f);
+	fwrite(&rows[0][2] , 1 , 4 , f);
+	fwrite(&nil        , 1 , 4 , f);
+	fwrite(&rows[1][0] , 1 , 4 , f);
+	fwrite(&rows[1][1] , 1 , 4 , f);
+	fwrite(&rows[1][2] , 1 , 4 , f);
+	fwrite(&nil        , 1 , 4 , f);
+	fwrite(&rows[2][0] , 1 , 4 , f);
+	fwrite(&rows[2][1] , 1 , 4 , f);
+	fwrite(&rows[2][2] , 1 , 4 , f);
+	fwrite(&nil        , 1 , 4 , f);
+	fwrite(&rows[3][0] , 1 , 4 , f);
+	fwrite(&rows[3][1] , 1 , 4 , f);
+	fwrite(&rows[3][2] , 1 , 4 , f);
+	nil = 1.0f;//15 chisi 1 bo'lishi kerakdu!
+	fwrite(&nil        , 1 , 4 , f);
+	return;
+}
+
+VOID BOX::flipYZAxis()
+{
+	FlipYZAxisInMatrix(m);
+	float temp = length	 ;
+	length = height		 ; 
+	height = temp		 ;
+	return;
+}
+
+VOID BOX::scaleTo()
+{
+Point3  s, pos;
+	width  *= sMyData.fMassh;
+	length *= sMyData.fMassh;
+	height *= sMyData.fMassh;
+	pos = m.GetRow(3);
+	pos.x *= sMyData.fMassh;
+	pos.y *= sMyData.fMassh;
+	pos.z *= sMyData.fMassh;
+	m.SetRow(3, pos);
+	return;
+}
+
+VOID BOX::decompose()
+{
+AffineParts	AP;
+	decomp_affine( m, &AP);
+	pos = AP.t;
+	Matrix3 temp;
+	temp = m;
+	temp.NoTrans();
+	temp.NoScale();
+	decomp_affine(temp, &AP);
+	QuatToEuler(AP.q, rot, EULERTYPE_XYZ);
+	return;
+}
+
+VOID		 SetCheckMenu(WORD);
+BOOL		 FillBoxsToEdit();
+VOID		 FillBoxsToEditTry();
+VOID		 SetWindowToCenter();
+VOID		 MoveSelItem(WORD, WORD);
+VOID		 MoveItem(WORD, WORD);
+int			 GetSelID(Interface*);
+VOID		 SaveCar();
+int			 GetBox(WORD, Box*, int);
+VOID		 WriteBox(WORD, FILE*);
+VOID		 GetIdInStr(WORD, char*);
+
+
+
+VOID SetCheckMenu(WORD idmenu)
+{
+HMENU menType = GetSubMenu(GetMenu(carsDlg), 1);
+
+	if(menType)
+	switch(idmenu)
+	{
+		case IDM1_TYPE_NEXIA	:
+			CheckMenuItem(menType, IDM1_TYPE_NEXIA  , MF_CHECKED  );
+			CheckMenuItem(menType, IDM1_TYPE_TICO   , MF_UNCHECKED);
+			CheckMenuItem(menType, IDM1_TYPE_VAZ2107, MF_UNCHECKED);
+		break;
+		case IDM1_TYPE_TICO	:
+			CheckMenuItem(menType, IDM1_TYPE_NEXIA  , MF_UNCHECKED);
+			CheckMenuItem(menType, IDM1_TYPE_TICO   , MF_CHECKED  );
+			CheckMenuItem(menType, IDM1_TYPE_VAZ2107, MF_UNCHECKED);
+		break;
+		case IDM1_TYPE_VAZ2107:
+			CheckMenuItem(menType, IDM1_TYPE_NEXIA  , MF_UNCHECKED);
+			CheckMenuItem(menType, IDM1_TYPE_TICO   , MF_CHECKED  );
+			CheckMenuItem(menType, IDM1_TYPE_VAZ2107, MF_UNCHECKED);
+		break;	
+	}
+	return;
+}
+
+BOOL FillBoxsToEdit()
+{
+int		b, allBoxNodes;
+TSTR	name;
+
+	allBoxNodes = 0;
+
+	allNodes = ipForCars->GetSelNodeCount();//i = GetSelID(ipForCars);Parentliklarni bu sanamaydur:
+
+	if( (allNodes < 0) || (allNodes > 65000) ) // select qilingani umuman bo'lmasa
+	{
+		MessageBox(NULL,"Belgilashda:","Xato!",MB_OK);
+		return FALSE;
+	}
+
+	for(b=0; b<allNodes; b++)
+	{
+		node = ipForCars->GetSelNode(b);//node ni olamiz
+		ObjectState os = node->EvalWorldState(ipForCars->GetTime());
+		os.obj->GetClassName((CStr&)name);
+		if(strstr(name, "Box")) 
+			allBoxNodes++;
+	}
+
+	if(allBoxNodes < b)
+	{
+		MessageBox(NULL, "Faqat Box bo'lishi kerak;", "Kutilmagan xato:", MB_OK);
+		return FALSE;
+	}
+	if(0 == allBoxNodes)
+	{
+		MessageBox(NULL, "Box y\'oq.", "Kutilmagan xato:", MB_OK);
+		return FALSE;
+	}
+
+	FillBoxsToEditTry();
+
+	return TRUE;
+}
+
+VOID FillBoxsToEditTry()
+{
+INode	*node;
+TSTR     name;
+
+	for(int n=0; n<allNodes; n++)
+	{
+		node     = ipForCars->GetSelNode(n);//node ni olamiz
+		nodeName = node->GetName();//node ni nomini olamiz
+		ObjectState os = node->EvalWorldState(ipForCars->GetTime());
+		os.obj->GetClassName((CStr&)name);
+		if(!strstr(name, "Box")) 
+			continue;
+		SendMessage(GetDlgItem(carsDlg,IDC_LIST_CARS), LB_ADDSTRING, 0, (LPARAM)nodeName); 
+        SendMessage(GetDlgItem(carsDlg,IDC_LIST_CARS), LB_SETITEMDATA, n, (LPARAM)n); 
+	}
+	return;
+}
+
+VOID SetWindowToCenter()
+{
+RECT rc;
+	GetWindowRect(carsDlg, &rc);
+	SetWindowPos (carsDlg, HWND_TOP,  
+				 (GetSystemMetrics(SM_CXSCREEN) - rc.right + rc.left)  / 2,
+				 (GetSystemMetrics(SM_CYSCREEN) - rc.bottom + rc.top)  / 2,
+				  rc.right - rc.left,				
+				  rc.bottom - rc.top,
+				  SWP_SHOWWINDOW);
+	return;
+}
+
+VOID MoveSelItem(WORD fr, WORD to)
+{
+LRESULT selInd, len;
+char	str[64];
+
+	selInd = SendMessage(GetDlgItem(carsDlg, fr), LB_GETCURSEL, (WPARAM)0, (LPARAM)0);
+	if(LB_ERR == selInd) return;
+	len = SendMessage(GetDlgItem(carsDlg, fr), LB_GETTEXTLEN, selInd, (LPARAM)0);
+	SendMessage(GetDlgItem(carsDlg, fr), LB_GETTEXT, selInd, (LPARAM)str);
+	SendMessage(GetDlgItem(carsDlg, fr), LB_DELETESTRING, (WPARAM)selInd, (LPARAM)0);
+	SendMessage(GetDlgItem(carsDlg,to), LB_ADDSTRING  , 0, (LPARAM)str); 
+	return;
+}
+
+VOID MoveItem(WORD fr, WORD to)
+{
+LRESULT len;
+char	str[64];
+
+	len = SendMessage(GetDlgItem(carsDlg, IDC_LIST_CARS), LB_GETTEXTLEN, fr, (LPARAM)0);
+	SendMessage(GetDlgItem(carsDlg, IDC_LIST_CARS), LB_GETTEXT, fr, (LPARAM)str);
+	SendMessage(GetDlgItem(carsDlg, IDC_LIST_CARS), LB_DELETESTRING, (WPARAM)fr, (LPARAM)0);
+	SendMessage(GetDlgItem(carsDlg,to), LB_ADDSTRING  , 0, (LPARAM)str); 
+	return;
+}
+
+VOID SaveCar()
+{
+char    strName[64], glName[128];
+LRESULT len;
+FILE    *fcar;
+float   mass, width, length, frSuspBias, reSuspBias; 
+Point3  seetOffs[5];
+Box     b;
+
+	len = SendMessage(GetDlgItem(carsDlg, IDC_EDIT_CENTER), LB_GETTEXTLEN, (WPARAM)0, (LPARAM) 0);
+	SendMessage(GetDlgItem(carsDlg, IDC_EDIT_CENTER), LB_GETTEXT, 0, (LPARAM)strName);
+	if(!len)
+#ifdef VISUAL_STUDIO_2005
+		sprintf_s(strName, "Noname");
+	lstrcat(strName, "car");
+	sprintf_s(glName, sMyData.szExport);
+	lstrcat(glName, "\\");
+	lstrcat(glName, strName);
+	fopen_s(&fcar, glName, "wb");
+#else
+		sprintf(strName, "Noname");
+	lstrcat(strName, "car");
+	sprintf(glName, sMyData.szExport);
+	lstrcat(glName, "\\");
+	lstrcat(glName, strName);
+	fcar = fopen(glName, "wb");
+#endif
+
+	//1.Type:
+	BYTE type;
+	HMENU menType = GetSubMenu(GetMenu(carsDlg), 1);
+	if(MF_CHECKED == GetMenuState(menType, IDM1_TYPE_NEXIA       , MF_BYCOMMAND))
+		type = 0x00;
+	else if(MF_CHECKED == GetMenuState(menType, IDM1_TYPE_TICO   , MF_BYCOMMAND))
+		type = 0x01;
+	else if(MF_CHECKED == GetMenuState(menType, IDM1_TYPE_VAZ2107, MF_BYCOMMAND))
+		type = 0x02;
+	else
+		type = 0xff;
+
+	fwrite(&type, 1, 1, fcar);
+
+	//2.Massa:
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_MASSA, strName, 63))
+	{
+		MessageBox(NULL, "Mass not found!???", "Error!", MB_OK);
+		goto End;
+	}
+	mass = (float)atof(strName);
+	mass *= sMyData.fMassh * sMyData.fMassh * sMyData.fMassh;//Koef-nti kubicheckiy massa uchun;
+	fwrite(&mass, 1, 4, fcar);
+
+
+	//3.Baza:
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_WIDTH, strName, 63))
+	{
+		MessageBox(NULL, "Width not found!???", "Error!", MB_OK);
+		goto End;
+	}
+	width = (float)atof(strName);
+	width *= sMyData.fMassh;
+	fwrite(&width, 1, 4, fcar);
+
+
+
+
+
+	//4.Koleya:
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_LENGTH, strName, 63))
+	{
+		MessageBox(NULL, "Length not found!???", "Error!", MB_OK);
+		goto End;
+	}
+	length = (float)atof(strName);
+	length *= sMyData.fMassh;
+	fwrite(&length, 1, 4, fcar);
+
+
+
+	//5.Xod peredney podveski:
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_FR_SUSPENSION_BIAS, strName, 63))
+	{
+		MessageBox(NULL, "Fr. susp. bias not found!???", "Error!", MB_OK);
+		goto End;
+	}
+	frSuspBias = (float)atof(strName);
+	frSuspBias *= sMyData.fMassh;
+	fwrite(&frSuspBias, 1, 4, fcar);
+
+
+
+
+
+	//6.Xod zadney podveski:
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_RE_SUSPENSION_BIAS, strName, 63))
+	{
+		MessageBox(NULL, "Rear susp. bias not found!???", "Error!", MB_OK);
+		goto End;
+	}
+	reSuspBias = (float)atof(strName);
+	reSuspBias *= sMyData.fMassh;
+	fwrite(&reSuspBias, 1, 4, fcar);
+
+
+
+
+
+
+
+	//7.Seet offsets, 5 ta:
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_FLSeet_X, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "FLSeet_X", MB_OK);goto End;}
+	seetOffs[0].x = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_FLSeet_Z, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "FLSeet_Y", MB_OK);goto End;}
+	seetOffs[0].y = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_FLSeet_Y, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "FLSeet_Z", MB_OK);goto End;}
+	seetOffs[0].z = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_FRSeet_X, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "FRSeet_X", MB_OK);goto End;}
+	seetOffs[1].x = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_FRSeet_Z, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "FRSeet_Y", MB_OK);goto End;}
+	seetOffs[1].y = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_FRSeet_Y, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "FRSeet_Z", MB_OK);goto End;}
+	seetOffs[1].z = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_RLSeet_X, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "RLSeet_X", MB_OK);goto End;}
+	seetOffs[2].x = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_RLSeet_Z, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "RLSeet_Y", MB_OK);goto End;}
+	seetOffs[2].y = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_RLSeet_Y, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "RLSeet_Z", MB_OK);goto End;}
+	seetOffs[2].z = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_MLSeet_X, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "MLSeet_X", MB_OK);goto End;}
+	seetOffs[3].x = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_MLSeet_Z, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "MLSeet_Y", MB_OK);goto End;}
+	seetOffs[3].y = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_MLSeet_Y, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "MLSeet_Z", MB_OK);goto End;}
+	seetOffs[3].z = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_RRSeet_X, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "RRSeet_X", MB_OK);goto End;}
+	seetOffs[4].x = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_RRSeet_Z, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "RRSeet_Y", MB_OK);goto End;}
+	seetOffs[4].y = sMyData.fMassh * (float)atof(strName);
+	if(!GetDlgItemText(carsDlg, IDC_EDIT_RRSeet_Y, strName, 63)){MessageBox(NULL, "Seet offset not found!!!", "RRSeet_Z", MB_OK);goto End;}
+	seetOffs[4].z = sMyData.fMassh * (float)atof(strName);
+	
+	int so;
+	for(so=0; so<5; so++)
+	{
+		fwrite(&seetOffs[so].x, 1, 4, fcar);
+		fwrite(&seetOffs[so].y, 1, 4, fcar);
+		fwrite(&seetOffs[so].z, 1, 4, fcar);
+	}
+
+	//8.Center:
+	if(-1 == GetBox(IDC_EDIT_CENTER, &b, 0))
+	{
+		MessageBox(NULL, "Center not found!???", "Error!", MB_OK);
+		goto End;
+	}
+
+	b.scaleTo   ();
+	b.flipYZAxis();
+	b.decompose ();
+	b.write     (fcar);
+
+	//9.Corpuse:
+	WriteBox(IDC_EDIT_KORPUSE, fcar);
+	//10.Front baggaj:
+	WriteBox(IDC_EDIT_FR_BAGAJ, fcar);
+	//11.Rear baggaj:
+	WriteBox(IDC_EDIT_REAR_BAGAJ, fcar);
+	//12.Front left tire:
+	WriteBox(IDC_EDIT_FRONT_L_TIRE, fcar);
+	//13.Front right tire:
+	WriteBox(IDC_EDIT_FRONT_R_TIRE, fcar);
+	//14.Rear left tire:
+	WriteBox(IDC_EDIT_REAR_L_TIRE, fcar);
+	//15.Rear right tire:
+	WriteBox(IDC_EDIT_REAR_R_TIRE, fcar);
+	//16.Front left door:
+	WriteBox(IDC_EDIT_FR_L_DOOR, fcar);
+	//17.Front right door:
+	WriteBox(IDC_EDIT_FR_R_DOOR, fcar);
+	//18.Rear left door:
+	WriteBox(IDC_EDIT_REAR_L_DOOR, fcar);
+	//19.Rear right door:
+	WriteBox(IDC_EDIT_REAR_R_DOOR, fcar);
+
+End:
+	fclose(fcar);
+	return;
+}
+
+VOID WriteBox(WORD id, FILE* f)
+{
+WORD tot;
+Box  b;
+
+	tot = (WORD)GetBox(id, 0, -1);
+	if(tot)
+	{
+		fwrite(&tot, 1, 2, f);
+		for(int nd=0; nd<tot; nd++)
+		{
+			if(-1 == GetBox(id, &b, nd))
+				break;
+			b.scaleTo   ();
+			b.flipYZAxis();
+			b.decompose ();
+			b.write     (f);
+		}
+	}
+	else
+	{
+		char str[128];
+		GetIdInStr(id, str);
+		lstrcat(str, "ceil item is empty.");
+		MessageBox(NULL, str, "Error!", MB_OK);
+	}
+return;
+}
+
+int GetBox(WORD id, Box* b, int selNum)
+{
+char	strList[64];
+int		k, nodeNum = -1;
+LRESULT len, totIt;
+
+	totIt = SendMessage(GetDlgItem(carsDlg, id), LB_GETCOUNT, (WPARAM)0, (LPARAM)0);
+	if(LB_ERR == totIt)	return 0;
+	if(-1 == selNum) return (int)totIt;//bo'lsa, umumiy soni so'ralyapti:
+
+	if(selNum > totIt)
+	{	MessageBox(NULL, "SelNum exside the bound limit in GetBox()", "Error!", MB_OK);
+		return -1;
+	}
+
+	len = SendMessage(GetDlgItem(carsDlg, id), LB_GETTEXTLEN, (WPARAM)0, (LPARAM) 0);
+	SendMessage(GetDlgItem(carsDlg, id), LB_GETTEXT, selNum, (LPARAM)strList);
+
+	if(!ipForCars)
+	{	MessageBox(NULL, "ip not found in GetBox()", "Error!", MB_OK);
+		return -1;
+	}
+
+	for(k=0; k<allNodes; k++)
+	{	node     = ipForCars->GetSelNode(k);
+		nodeName = node->GetName();//node ni nomini olamiz
+		if(strstr(nodeName, strList))
+		{
+			nodeNum = k;
+			break;
+		}
+	}
+	if(-1 == nodeNum)
+	{
+		MessageBox(NULL, "NodeNum not found in GetBox()", "Error!", MB_OK);
+		return -1;
+	}
+
+	b->m = node->GetNodeTM(ipForCars->GetTime());
+	SimpleObject* so = (SimpleObject*) node->GetObjectRef();
+//	int   lseg, wseg, hseg;
+	so->pblock->GetValue(BOXOBJ_WIDTH ,  0, b->width , FOREVER);
+	so->pblock->GetValue(BOXOBJ_LENGTH,  0, b->length, FOREVER);
+	so->pblock->GetValue(BOXOBJ_HEIGHT,  0, b->height, FOREVER);
+/*  so->pblock->GetValue(BOXOBJ_WSEGS ,  0, wseg     , FOREVER);
+    so->pblock->GetValue(BOXOBJ_LSEGS ,  0, lseg     , FOREVER);
+    so->pblock->GetValue(BOXOBJ_HSEGS ,  0, hseg     , FOREVER);
+	if( (lseg != 1) || (wseg != 1) || (hseg != 1) )
+	{
+		MessageBox(NULL, "Box singizni seksiyalarini 1 ga tenglashtiring.","Iltimos!",MB_OK);
+		return 0;
+	}
+	TriObject* Tri = GetTriObjectFromNode(node, ipForCars->GetTime(), needDel);
+	if (!Tri) 
+	{
+		MessageBox(NULL,"Boxni editmesh qilolmayman!","Diqqat",MB_OK);
+		return 0;
+	}
+	mesh = &Tri->GetMesh();
+    numVerts = mesh->getNumVerts();
+	Point3 verts[16];
+	for(i=0; i<numVerts; i++)
+		b->p[i] = TM * mesh->verts[i]; 
+*/
+AffineParts	AP;
+	decomp_affine(b->m, &AP);
+	Point3 sc = AP.k;
+	b->width  *= AP.k.x;
+	b->length *= AP.k.y;
+	b->height *= AP.k.z;
+
+	b->m.NoScale();
+
+//	if(id != IDC_EDIT_CENTER)
+//	{
+//		//Center Boxga nisbatan olamiza:
+//		Matrix3 tRelCent = b->m * mCenterInv;
+//		b->m = tRelCent;
+//	}
+
+	if(selNum == totIt)
+		return -1;//ListBoxning oxiri, qaytib choqirma;
+	//if(needDel) 
+	//	Tri->DeleteMe();
+	return selNum;
+}
+
+VOID GetIdInStr(WORD id, char* str)
+{
+	switch(id)
+	{
+#ifdef VISUAL_STUDIO_2005
+		case IDC_EDIT_KORPUSE:
+			sprintf_s(str, 128, "IDC_EDIT_KORPUSE");
+		break;
+		case IDC_EDIT_FR_BAGAJ:
+			sprintf_s(str, 128, "IDC_EDIT_FR_BAGAJ");
+		break;
+		case IDC_EDIT_REAR_BAGAJ:
+			sprintf_s(str, 128, "IDC_EDIT_REAR_BAGAJ");
+		break;
+		case IDC_EDIT_FRONT_L_TIRE:
+			sprintf_s(str, 128, "IDC_EDIT_FRONT_L_TIRE");
+		break;
+		case IDC_EDIT_FRONT_R_TIRE:
+			sprintf_s(str, 128, "IDC_EDIT_FRONT_R_TIRE");
+		break;
+		case IDC_EDIT_REAR_L_TIRE:
+			sprintf_s(str, 128, "IDC_EDIT_REAR_L_TIRE");
+		break;
+		case IDC_EDIT_REAR_R_TIRE:
+			sprintf_s(str, 128, "IDC_EDIT_REAR_R_TIRE");
+		break;
+		case IDC_EDIT_FR_L_DOOR:
+			sprintf_s(str, 128, "IDC_EDIT_FR_L_DOOR");
+		break;
+		case IDC_EDIT_FR_R_DOOR:
+			sprintf_s(str, 128, "IDC_EDIT_FR_R_DOOR");
+		break;
+		case IDC_EDIT_REAR_L_DOOR:
+			sprintf_s(str, 128, "IDC_EDIT_REAR_L_DOOR");
+		break;
+		case IDC_EDIT_REAR_R_DOOR:
+			sprintf_s(str, 128, "IDC_EDIT_REAR_R_DOOR");
+		break;
+#else
+		case IDC_EDIT_KORPUSE:
+			sprintf(str, "IDC_EDIT_KORPUSE");
+		break;
+		case IDC_EDIT_FR_BAGAJ:
+			sprintf(str, "IDC_EDIT_FR_BAGAJ");
+		break;
+		case IDC_EDIT_REAR_BAGAJ:
+			sprintf(str, "IDC_EDIT_REAR_BAGAJ");
+		break;
+		case IDC_EDIT_FRONT_L_TIRE:
+			sprintf(str, "IDC_EDIT_FRONT_L_TIRE");
+		break;
+		case IDC_EDIT_FRONT_R_TIRE:
+			sprintf(str, "IDC_EDIT_FRONT_R_TIRE");
+		break;
+		case IDC_EDIT_REAR_L_TIRE:
+			sprintf(str, "IDC_EDIT_REAR_L_TIRE");
+		break;
+		case IDC_EDIT_REAR_R_TIRE:
+			sprintf(str, "IDC_EDIT_REAR_R_TIRE");
+		break;
+		case IDC_EDIT_FR_L_DOOR:
+			sprintf(str, "IDC_EDIT_FR_L_DOOR");
+		break;
+		case IDC_EDIT_FR_R_DOOR:
+			sprintf(str, "IDC_EDIT_FR_R_DOOR");
+		break;
+		case IDC_EDIT_REAR_L_DOOR:
+			sprintf(str, "IDC_EDIT_REAR_L_DOOR");
+		break;
+		case IDC_EDIT_REAR_R_DOOR:
+			sprintf(str, "IDC_EDIT_REAR_R_DOOR");
+		break;
+#endif
+	}
+	return;
+}
+
+VOID OpenCar(char *name)
+{
+FILE *fstr;
+char str[128];
+
+#ifdef VISUAL_STUDIO_2005
+	fopen_s(&fstr, name, "rb");
+#else
+	fstr = fopen(name, "rb");
+#endif
+	if(!fstr)
+	{
+		MessageBox(NULL, "Error in open file!", name, MB_OK);
+		return;
+	}
+	//1.Type:
+	BYTE type;
+	fread(&type, 1, 1, fstr);
+	switch(type)
+	{
+		case 0:
+			SetCheckMenu(IDM1_TYPE_NEXIA);
+		break;
+		case 1:
+			SetCheckMenu(IDM1_TYPE_TICO);
+		break;
+		case 2:
+			SetCheckMenu(IDM1_TYPE_VAZ2107);
+		break;
+	}
+
+	//2.Massa:
+	float massa;
+	fread(&massa, 1, 4, fstr);
+	massa /= sMyData.fMassh * sMyData.fMassh * sMyData.fMassh;//Koef-nti kubicheckiy massa uchun;
+#ifdef VISUAL_STUDIO_2005
+	sprintf_s(str, 128, "%.4f", massa);
+#else
+	sprintf(str, "%.4f", massa);
+#endif
+	SetDlgItemText(carsDlg, IDC_EDIT_MASSA, str);
+
+
+
+	//3.Baza:
+	float width;
+	fread(&width, 1, 4, fstr);
+	width /= sMyData.fMassh;
+#ifdef VISUAL_STUDIO_2005
+	sprintf_s(str, 128, "%.4f", width);
+#else
+	sprintf(str, "%.4f", width);
+#endif
+	SetDlgItemText(carsDlg, IDC_EDIT_WIDTH, str);
+
+
+	//4.Koleya:
+	float length;
+	fread(&length, 1, 4, fstr);
+	length /= sMyData.fMassh;
+#ifdef VISUAL_STUDIO_2005
+	sprintf_s(str, 128, "%.4f", length);
+#else
+	sprintf(str, "%.4f", length);
+#endif
+	SetDlgItemText(carsDlg, IDC_EDIT_LENGTH, str);
+
+
+
+	//5.Xod peredney podveski:
+	float frSuspBias;
+	fread(&frSuspBias, 1, 4, fstr);
+	frSuspBias /= sMyData.fMassh;
+#ifdef VISUAL_STUDIO_2005
+	sprintf_s(str, 128, "%.4f", frSuspBias);
+#else
+	sprintf(str, "%.4f", frSuspBias);
+#endif
+	SetDlgItemText(carsDlg, IDC_EDIT_FR_SUSPENSION_BIAS, str);
+
+
+	//6.Xod zadney podveski:
+	float reSuspBias;
+	fread(&reSuspBias, 1, 4, fstr);
+	reSuspBias /= sMyData.fMassh;
+#ifdef VISUAL_STUDIO_2005
+	sprintf_s(str, 128, "%.4f", reSuspBias);
+#else
+	sprintf(str, "%.4f", reSuspBias);
+#endif
+	SetDlgItemText(carsDlg, IDC_EDIT_RE_SUSPENSION_BIAS, str);
+
+
+
+	//7.Seet offsets, 5 ta:
+	float off;
+#ifdef VISUAL_STUDIO_2005
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FLSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FLSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FLSeet_Y, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FRSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FRSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FRSeet_Y, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RLSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RLSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RLSeet_Y, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_MLSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_MLSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_MLSeet_Y, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RRSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RRSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf_s(str, 128, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RRSeet_Y, str);
+#else
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FLSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FLSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FLSeet_Y, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FRSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FRSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_FRSeet_Y, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RLSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RLSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RLSeet_Y, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_MLSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_MLSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_MLSeet_Y, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RRSeet_X, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RRSeet_Z, str);
+	fread(&off, 1, 4, fstr); off /= sMyData.fMassh; sprintf(str, "%.4f", off);	SetDlgItemText(carsDlg, IDC_EDIT_RRSeet_Y, str);
+#endif
+
+	fclose(fstr);
+	return;
+}
+
+int FindBox(char *findStr)
+{
+LRESULT totIt;
+char	str[128];
+
+	totIt = SendMessage(GetDlgItem(carsDlg, IDC_LIST_CARS), LB_GETCOUNT, (WPARAM)0, (LPARAM)0);
+	if(LB_ERR == totIt)
+		return 0;
+
+	for(int ind=0; ind<totIt; ind++)
+	{
+		SendMessage(GetDlgItem(carsDlg, IDC_LIST_CARS), LB_GETTEXTLEN, ind, (LPARAM)0);
+		SendMessage(GetDlgItem(carsDlg, IDC_LIST_CARS), LB_GETTEXT, ind, (LPARAM)str);
+		if(strstr(str, findStr))
+			return ind;
+	}
+
+	return -1;
+}
+
+VOID SetBoxs()
+{
+int	ind;
+
+	//1.Center:IDC_LIST_CARS, 
+	ind = FindBox("Center");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_CENTER);
+
+	//2.Korpuse
+	ind = FindBox("Korpuse");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_KORPUSE);
+	while(-1 != ind)
+	{
+		ind = FindBox("Korpuse");
+		if(-1 != ind)
+			MoveItem(ind, IDC_EDIT_KORPUSE);
+	}
+
+	//3.FBagaj
+	ind = FindBox("FBagaj");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_FR_BAGAJ);
+	while(-1 != ind)
+	{
+		ind = FindBox("FBagaj");
+		if(-1 != ind)
+			MoveItem(ind, IDC_EDIT_FR_BAGAJ);
+	}
+
+	//4.RBagaj
+	ind = FindBox("RBagaj");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_REAR_BAGAJ);
+	while(-1 != ind)
+	{
+		ind = FindBox("RBagaj");
+		if(-1 != ind)
+			MoveItem(ind, IDC_EDIT_REAR_BAGAJ);
+	}
+
+	//5.FLTIRE
+	ind = FindBox("LFTire");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_FRONT_L_TIRE);
+	while(-1 != ind)
+	{
+		ind = FindBox("LFTire");
+		if(-1 != ind)
+			MoveItem(ind, IDC_EDIT_FRONT_L_TIRE);
+	}
+
+	//6.FRTIRE
+	ind = FindBox("RFTire");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_FRONT_R_TIRE);
+	while(-1 != ind)
+	{
+		ind = FindBox("RFTire");
+		if(-1 != ind)
+			MoveItem(ind, IDC_EDIT_FRONT_R_TIRE);
+	}
+
+	//7.RLTIRE
+	ind = FindBox("LRTire");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_REAR_L_TIRE);
+	while(-1 != ind)
+	{
+		ind = FindBox("LRTire");
+		if(-1 != ind)
+			MoveItem(ind, IDC_EDIT_REAR_L_TIRE);
+	}
+
+	//8.RRTIRE
+	ind = FindBox("RRTire");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_REAR_R_TIRE);
+	while(-1 != ind)
+	{
+		ind = FindBox("RRTire");
+		if(-1 != ind)
+			MoveItem(ind, IDC_EDIT_REAR_R_TIRE);
+	}
+
+	//9.FLDoor
+	ind = FindBox("LFdoor");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_FR_L_DOOR);
+
+	//10.FRDoor
+	ind = FindBox("RFdoor");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_FR_R_DOOR);
+
+	//11.RLDoor
+	ind = FindBox("LRdoor");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_REAR_L_DOOR);
+
+	//12.RRDoor
+	ind = FindBox("RRdoor");
+	if(-1 != ind)
+		MoveItem(ind, IDC_EDIT_REAR_R_DOOR);
+
+
+	//Bazasi va koleyasini hisoblab qo'yayluk:
+	Box  bl, br, bf;
+	if(-1 == GetBox(IDC_EDIT_REAR_L_TIRE , &bl, 0))
+		return;
+	if(-1 == GetBox(IDC_EDIT_REAR_R_TIRE , &br, 0))
+		return;
+	if(-1 == GetBox(IDC_EDIT_FRONT_L_TIRE, &bf, 0))
+		return;
+	bl.scaleTo   ();
+	bl.flipYZAxis();
+	bl.decompose ();
+	br.scaleTo   ();
+	br.flipYZAxis();
+	br.decompose ();
+	bf.scaleTo   ();
+	bf.flipYZAxis();
+	bf.decompose ();
+	float width, length; char str[32];
+	width  = (float)fabs(bl.pos.x) + (float)fabs(br.pos.x);//Agar center o'rtasida bo'lsa;
+	length = (float)fabs(bf.pos.z) + (float)fabs(bl.pos.z);//Agar center o'rtasida bo'lsa;
+#ifdef VISUAL_STUDIO_2005
+	sprintf_s(str, 128, "%.4f", width);
+	SetDlgItemText(carsDlg, IDC_EDIT_WIDTH, str);
+	sprintf_s(str, 128, "%.4f", length);
+#else
+	sprintf(str, "%.4f", width);
+	SetDlgItemText(carsDlg, IDC_EDIT_WIDTH, str);
+	sprintf(str, "%.4f", length);
+#endif
+	SetDlgItemText(carsDlg, IDC_EDIT_LENGTH, str);
+
+	return;
+}
+
+
+LRESULT CALLBACK Cars(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch (message)
+	{
+		case WM_INITDIALOG:
+			ThrPar *tp;
+			tp = (ThrPar*)lParam;
+			ipForCars = tp->ip;
+			iuForCars = tp->iu;
+			carsDlg = hDlg;
+			if(!FillBoxsToEdit())
+				EndDialog(hDlg, LOWORD(wParam));
+			SetCheckMenu(IDM1_TYPE_NEXIA);
+			SetWindowToCenter();
+			return TRUE;
+		case WM_SYSCOMMAND:
+			if(SC_CLOSE == LOWORD(wParam))
+				EndDialog(hDlg, LOWORD(wParam));
+			break;
+		case WM_COMMAND:
+			//Menudan:
+			switch((int)LOWORD(wParam))
+			{
+				case IDM1_FILE_EXIT:
+					EndDialog(hDlg, LOWORD(wParam));
+				return TRUE;
+				case IDM1_TYPE_NEXIA:
+					SetCheckMenu(IDM1_TYPE_NEXIA);
+				break;
+				case IDM1_TYPE_TICO:
+					SetCheckMenu(IDM1_TYPE_TICO);
+				break;
+				case IDM1_TYPE_VAZ2107:
+					SetCheckMenu(IDM1_TYPE_VAZ2107);
+				break;
+				case IDM_FILE_SAVE:
+					SaveCar();
+				break;
+				case IDM_FILE_OPEN:
+					OPENFILENAME	ofn;
+					TCHAR			sfile[256];
+					memset(&ofn, 0, sizeof (OPENFILENAME));
+					memset(sfile,0, 256);
+					ofn.lStructSize = sizeof(OPENFILENAME);
+					ofn.lpstrFilter = TEXT("All car Files (*.car)\0*.car\0");  
+					ofn.lpstrTitle  = TEXT("Open car file.");
+					ofn.lpstrFile   = sfile;
+					ofn.Flags       = OFN_EXPLORER | OFN_ALLOWMULTISELECT;
+					ofn.nMaxFile    = 256;
+					if(!GetOpenFileName(&ofn))
+						return 0;
+					OpenCar(sfile);
+				break;
+				case IDM_FILE_SET_BOXS:
+					SetBoxs();
+				break;
+			}
+
+			switch((int)HIWORD(wParam))
+			{
+				case EN_SETFOCUS: 
+					DisableAccelerators();
+				return TRUE;
+				case EN_KILLFOCUS: 
+					EnableAccelerators();
+				return TRUE;
+				case BN_CLICKED://   Bosilgan, knopkami, yoki boshqa narsa 
+					switch(LOWORD(wParam))
+					{
+						//Knopkalar:
+						case IDC_BTN_CENTER:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_CENTER);
+						break;
+						case IDC_BTN_ADD_TO_KORPUSE:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_KORPUSE);
+						break;
+						case IDC_BTN_DELTE_FR_KORPUSE:
+							MoveSelItem(IDC_EDIT_KORPUSE, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_FRONT_BAGAJ:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_FR_BAGAJ);
+						break;
+						case IDC_BTN_DEL_FR_FRONT_BAGAJ:
+							MoveSelItem(IDC_EDIT_FR_BAGAJ, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_REAR_BAGAJ:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_REAR_BAGAJ);
+						break;
+						case IDC_BTN_DEL_FR_REAR_BAGAJ:
+							MoveSelItem(IDC_EDIT_REAR_BAGAJ, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_FRONT_L_TIRE:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_FRONT_L_TIRE);
+						break;
+						case IDC_BTN_DEL_FR_FRONT_L_TIRE:
+							MoveSelItem(IDC_EDIT_FRONT_L_TIRE, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_FRONT_R_TIRE:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_FRONT_R_TIRE);
+						break;
+						case IDC_BTN_DEL_FR_FRONT_R_TIRE:
+							MoveSelItem(IDC_EDIT_FRONT_R_TIRE, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_REAR_L_TIRE:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_REAR_L_TIRE);
+						break;
+						case IDC_BTN_DEL_FR_REAR_L_TIRE:
+							MoveSelItem(IDC_EDIT_REAR_L_TIRE, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_REAR_R_TIRE:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_REAR_R_TIRE);
+						break;
+						case IDC_BTN_DEL_FR_REAR_R_TIRE:
+							MoveSelItem(IDC_EDIT_REAR_R_TIRE, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_FR_L_DOOR:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_FR_L_DOOR);
+						break;
+						case IDC_BTN_DEL_TO_FR_L_DOOR:
+							MoveSelItem(IDC_EDIT_FR_L_DOOR, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_FR_R_DOOR:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_FR_R_DOOR);
+						break;
+						case IDC_BTN_DEL_TO_FR_R_DOOR:
+							MoveSelItem(IDC_EDIT_FR_R_DOOR, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_REAR_L_DOOR:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_REAR_L_DOOR);
+						break;
+						case IDC_BTN_DEL_FR_REAR_L_DOOR:
+							MoveSelItem(IDC_EDIT_REAR_L_DOOR, IDC_LIST_CARS);
+						break;
+						case IDC_BTN_ADD_TO_REAR_R_DOOR:
+							MoveSelItem(IDC_LIST_CARS, IDC_EDIT_REAR_R_DOOR);
+						break;
+						case IDC_BTN_DEL_FR_REAR_R_DOOR:
+							MoveSelItem(IDC_EDIT_REAR_R_DOOR, IDC_LIST_CARS);
+						break;
+					}
+				break;
+			}
+		break;
+	}
+    return FALSE;
+}
